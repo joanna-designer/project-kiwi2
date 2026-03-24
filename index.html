@@ -635,7 +635,6 @@
 
       if (results.multiHandLandmarks?.length) {
         const lm = results.multiHandLandmarks[0];
-        /* drawing_utils 는 normalized 좌표를 canvas 크기에 맞춰 자동 스케일 */
         drawConnectors(lmCtx, lm, HAND_CONNECTIONS,
           { color: 'rgba(255,255,255,.55)', lineWidth: 1 });
         drawLandmarks(lmCtx, lm,
@@ -661,7 +660,7 @@
       switch (gesture) {
         case 'palm':
           if (palmXPct < 20) {
-            setState('walk_left', false);
+            setState('walk_left', true);
           } else if (palmXPct > 80) {
             setState('walk_right', true);
           } else {
