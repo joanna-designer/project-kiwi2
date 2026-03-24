@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>키위새 제스처 인터랙션 🥝</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    }
+
+    /* ═══════════════════════════════════════
+       배경 씬
+    ═══════════════════════════════════════ */
+    #bg {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg,
+        #4a90d9 0%, #87ceeb 45%, #b0e2f5 55%
+      );
+    }
+
+    /* 태양 */
+    .sun {
+      position: absolute;
+      top: 7%; right: 9%;
+      width: 68px; height: 68px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 38% 38%, #fffde4, #ffda00);
+      box-shadow: 0 0 0 14px rgba(255,218,0,.14), 0 0 0 32px rgba(255,218,0,.07);
+      animation: sunGlow 5s ease-in-out infinite;
+    }
+    @keyframes sunGlow {
+      0%,100% { box-shadow: 0 0 0 14px rgba(255,218,0,.14), 0 0 0 32px rgba(255,218,0,.07); }
+      50%     { box-shadow: 0 0 0 22px rgba(255,218,0,.22), 0 0 0 48px rgba(255,218,0,.10); }
+    }
+
+    /* 구름 */
+    .cloud {
+      position: absolute;
+      background: #fff;
+      border-radius: 60px;
+      opacity: .88;
+      filter: drop-shadow(0 3px 6px rgba(0,0,0,.07));
+    }
+    .cloud::before, .cloud::after {
+      content: ''; position: absolute;
+      background: #fff; border-radius: 50%;
+    }
+    .cloud-a {
+      top: 13%; width: 140px; height: 38px;
+      animation: cloudDrift 28s linear infinite;
+      left: -18%;
+    }
+    .cloud-a::before { width: 58px; height: 58px; top: -32px; left: 20px; }
+    .cloud-a::after  { width: 40px; height: 40px; top: -20px; left: 68px; }
+    .cloud-b {
+      top: 23%; width: 96px; height: 28px;
+      animation: cloudDrift 40s linear infinite 7s;
+      left: -14%;
+    }
+    .cloud-b::before { width: 40px; height: 40px; top: -24px; left: 14px; }
+    .cloud-b::after  { width: 28px; height: 28px; top: -14px; left: 48px; }
+    @keyframes cloudDrift { from { left: -22%; } to { left: 116%; } }
+
+    /* 잔디 */
+    .ground {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 37%;
+      background: linear-gradient(180deg, #7ec850 0%, #4a9a1a 100%);
+      border-radius: 55% 55% 0 0 / 28px 28px 0 0;
+    }
+    .ground::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 8px;
+      background: repeating-linear-gradient(
+        90deg, transparent 0, transparent 9px,
+        rgba(255,255,255,.18) 9px, rgba(255,255,255,.18) 11px
+      );
+      border-radius: inherit;
+    }
+
+    /* ═══════════════════════════════════════
+       키위새 레이어 구조
+       #kiwi-wrap  ← 화면상 위치 (left %)
+         #kiwi-anim  ← CSS 키프레임 (Y 이동 · 스쿼시)
+           #kiwi-flip  ← 좌우 반전 (scaleX)
+             img#kiwi-img
+         #kiwi-shadow
+    ═══════════════════════════════════════ */
+    #kiwi-wrap {
+      position: absolute;
+      bottom: 33%;
+      width: 180px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      /* left 는 JS 에서 직접 style.left 로 제어 */
+    }
+
+    #kiwi-anim {
+      transform-origin: bottom center;
+    }
+
+    #kiwi-flip {
+      transition: transform .18s cubic-bezier(.25,.46,.45,.94);
+    }
+
+    #kiwi-img {
+      display: block;
+      width: 160px; height: 160px;
+      object-fit: contain;
+      filter: drop-shadow(0 8px 14px rgba(0,0,0,.22));
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    #kiwi-shadow {
+      width: 88px; height: 14px;
+      margin-top: -4px;
+      border-radius: 50%;
+      background: radial-gradient(ellipse, rgba(0,0,0,.28) 0%, transparent 70%);
+    }
+
+    /* ═══════════════════════════════════════
+       CSS 키프레임 애니메이션
+    ═══════════════════════════════════════ */
+
+    /* IDLE: 숨쉬기 */
+    @keyframes idle-breathe {
+      0%,100% { transform: scaleX(1)     scaleY(1)     translateY(0px);  }
+      35%     { transform: scaleX(1.018) scaleY(0.988) translateY(-2px); }
+      70%     { transform: scaleX(0.988) scaleY(1.018) translateY(0px);  }
+    }
+
+    /* WALK: 발걸음 바운스 */
+    @keyframes walk-step {
+      0%,100% { transform: translateY(0px)   scaleX(1)     scaleY(1);    }
+      18%     { transform: translateY(-12px)  scaleX(0.93)  scaleY(1.08); }
+      36%     { transform: translateY(2px)    scaleX(1.05)  scaleY(0.95); }
+      54%     { transform: translateY(-7px)   scaleX(0.96)  scaleY(1.04); }
+      72%     { transform: translateY(1px)    scaleX(1.03)  scaleY(0.97); }
+      90%     { transform: translateY(-3px)   scaleX(0.99)  scaleY(1.01); }
+    }
+
+    /* EAT: 쪽쪽 먹기 */
+    @keyframes eat-peck {
+      0%,100% { transform: rotate(0deg)    translateY(0px)   scaleX(1); }
+      22%     { transform: rotate(-20deg)  translateY(-6px)  scaleX(.97); }
+      44%     { transform: rotate(14deg)   translateY(6px)   scaleX(1.03); }
+      66%     { transform: rotate(-9deg)   translateY(-3px)  scaleX(.99); }
+      88%     { transform: rotate(4deg)    translateY(1px)   scaleX(1.01); }
+    }
+
+    /* POOP: 쪼그리기 + 떨기 */
+    @keyframes poop-squat {
+      0%,100% { transform: scaleX(1)     scaleY(1)     translateY(0px); }
+      18%     { transform: scaleX(1.11)  scaleY(0.87)  translateY(8px); }
+      26%     { transform: scaleX(1.13)  scaleY(0.86)  translateY(9px) rotate(-2.5deg); }
+      32%     { transform: scaleX(1.11)  scaleY(0.87)  translateY(8px) rotate( 2.5deg); }
+      38%     { transform: scaleX(1.12)  scaleY(0.87)  translateY(8px); }
+      60%     { transform: scaleX(1.06)  scaleY(0.93)  translateY(5px); }
+      80%     { transform: scaleX(1.02)  scaleY(0.98)  translateY(2px); }
+    }
+
+    /* HAPPY: 신나는 점프 */
+    @keyframes happy-bounce {
+      0%,100% { transform: translateY(0px)    scaleX(1)     scaleY(1)     rotate(0deg);  }
+      14%     { transform: translateY(-26px)   scaleX(0.92)  scaleY(1.12)  rotate(-7deg); }
+      26%     { transform: translateY(3px)     scaleX(1.09)  scaleY(0.91)  rotate(0deg);  }
+      40%     { transform: translateY(-17px)   scaleX(0.95)  scaleY(1.07)  rotate(6deg);  }
+      52%     { transform: translateY(2px)     scaleX(1.06)  scaleY(0.94)  rotate(0deg);  }
+      65%     { transform: translateY(-9px)    scaleX(0.98)  scaleY(1.04)  rotate(-3deg); }
+      80%     { transform: translateY(0px)     scaleX(1.02)  scaleY(0.98)  rotate(0deg);  }
+    }
+
+    /* ── 그림자 애니메이션 ── */
+    @keyframes sh-idle  {
+      0%,100%{ transform:scale(1);    opacity:.9 }
+      50%    { transform:scale(1.03); opacity:.8 }
+    }
+    @keyframes sh-walk  {
+      0%,100%{ transform:scale(1);    opacity:.9 }
+      18%    { transform:scale(.75);  opacity:.5 }
+      36%    { transform:scale(1.08); opacity:.95 }
+      54%    { transform:scale(.82);  opacity:.55 }
+      72%    { transform:scale(1.04); opacity:.9 }
+    }
+    @keyframes sh-happy {
+      0%,100%{ transform:scale(1);   opacity:.9 }
+      14%    { transform:scale(.45); opacity:.3 }
+      26%    { transform:scale(1.12);opacity:1  }
+      40%    { transform:scale(.58); opacity:.4 }
+      52%    { transform:scale(1.08);opacity:.95 }
+    }
+    @keyframes sh-poop  {
+      0%,100%{ transform:scale(1);    opacity:.9 }
+      18%    { transform:scale(1.32); opacity:1  }
+      60%    { transform:scale(1.18); opacity:.95 }
+    }
+    @keyframes sh-eat   {
+      0%,100%{ transform:scale(1);    opacity:.9 }
+      22%    { transform:scale(.88);  opacity:.7 }
+      44%    { transform:scale(1.06); opacity:1  }
+    }
+
+    /* ── 애니메이션 클래스 적용 ── */
+    .s-idle  #kiwi-anim   { animation: idle-breathe  2.8s ease-in-out infinite; }
+    .s-idle  #kiwi-shadow { animation: sh-idle        2.8s ease-in-out infinite; }
+
+    .s-walk  #kiwi-anim   { animation: walk-step      .44s ease-in-out infinite; }
+    .s-walk  #kiwi-shadow { animation: sh-walk         .44s ease-in-out infinite; }
+
+    .s-eat   #kiwi-anim   { animation: eat-peck        .54s ease-in-out infinite; }
+    .s-eat   #kiwi-shadow { animation: sh-eat           .54s ease-in-out infinite; }
+
+    .s-poop  #kiwi-anim   { animation: poop-squat      .74s ease-in-out infinite; }
+    .s-poop  #kiwi-shadow { animation: sh-poop          .74s ease-in-out infinite; }
+
+    .s-happy #kiwi-anim   { animation: happy-bounce    .50s ease-in-out infinite; }
+    .s-happy #kiwi-shadow { animation: sh-happy         .50s ease-in-out infinite; }
+
+    /* ═══════════════════════════════════════
+       파티클 캔버스
+    ═══════════════════════════════════════ */
+    #particles-canvas {
+      position: absolute; inset: 0;
+      pointer-events: none;
+    }
+
+    /* ═══════════════════════════════════════
+       웹캠 (숨김)
+    ═══════════════════════════════════════ */
+    #webcam {
+      position: absolute;
+      top: -2000px; left: -2000px;
+      width: 1px; height: 1px;
+    }
+
+    /* ═══════════════════════════════════════
+       미니 카메라 뷰
+    ═══════════════════════════════════════ */
+    #lm-canvas {
+      position: absolute;
+      top: 16px; right: 16px;
+      width: 200px; height: 150px;
+      border-radius: 14px;
+      border: 2px solid rgba(255,255,255,.6);
+      box-shadow: 0 4px 18px rgba(0,0,0,.2);
+      background: #111;
+    }
+
+    /* ═══════════════════════════════════════
+       HUD
+    ═══════════════════════════════════════ */
+    #hud {
+      position: absolute;
+      bottom: 24px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,.54);
+      color: #fff;
+      padding: 10px 32px;
+      border-radius: 50px;
+      font-size: 16px; font-weight: 700;
+      letter-spacing: .04em;
+      backdrop-filter: blur(10px);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    /* ═══════════════════════════════════════
+       제스처 가이드
+    ═══════════════════════════════════════ */
+    #guide {
+      position: absolute;
+      top: 16px; left: 16px;
+      background: rgba(0,0,0,.44);
+      color: #fff;
+      padding: 14px 16px;
+      border-radius: 14px;
+      font-size: 13px;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,.12);
+      line-height: 1;
+      pointer-events: none;
+    }
+    #guide .gr {
+      display: flex; align-items: center;
+      gap: 10px; padding: 5px 0;
+    }
+    #guide .gr + .gr { border-top: 1px solid rgba(255,255,255,.09); }
+    #guide .gi { font-size: 16px; width: 22px; text-align: center; }
+
+    /* ═══════════════════════════════════════
+       로딩
+    ═══════════════════════════════════════ */
+    #loading {
+      position: fixed; inset: 0;
+      background: linear-gradient(135deg, #0d1b2a, #1a3a5c);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #fff; gap: 18px;
+      z-index: 500;
+    }
+    #loading.hidden { display: none; }
+    #loading .ld-spin { font-size: 62px; animation: spin .9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading .ld-title  { font-size: 20px; font-weight: 700; }
+    #loading .ld-sub    { font-size: 14px; opacity: .55; }
+
+    /* 화면 흔들기 */
+    @keyframes screenShake {
+      0%,100% { transform: none; }
+      20%     { transform: translate(-4px,  2px) rotate(-.4deg); }
+      40%     { transform: translate( 4px, -2px) rotate( .4deg); }
+      60%     { transform: translate(-2px,  3px) rotate(-.3deg); }
+      80%     { transform: translate( 2px, -1px) rotate( .3deg); }
+    }
+    body.shaking { animation: screenShake .46s ease-in-out; }
+  </style>
+</head>
+<body>
+
+  <!-- ── 배경 ── -->
+  <div id="bg"></div>
+  <div class="sun"></div>
+  <div class="cloud cloud-a"></div>
+  <div class="cloud cloud-b"></div>
+  <div class="ground"></div>
+
+  <!-- ── 파티클 ── -->
+  <canvas id="particles-canvas"></canvas>
+
+  <!-- ── 키위새 ── -->
+  <div id="kiwi-wrap" class="s-idle">
+    <div id="kiwi-anim">
+      <div id="kiwi-flip">
+        <img id="kiwi-img" src="idle.png" alt="키위새" draggable="false">
+      </div>
+    </div>
+    <div id="kiwi-shadow"></div>
+  </div>
+
+  <!-- ── 웹캠 (숨김) ── -->
+  <video id="webcam" autoplay playsinline muted></video>
+
+  <!-- ── 미니 카메라 ── -->
+  <canvas id="lm-canvas"></canvas>
+
+  <!-- ── HUD ── -->
+  <div id="hud">😴 눈 깜빡...</div>
+
+  <!-- ── 제스처 가이드 ── -->
+  <div id="guide">
+    <div class="gr"><span class="gi">👋</span><span>손바닥 → 키위새가 바라봄</span></div>
+    <div class="gr"><span class="gi">←</span><span>손 왼쪽 끝 → 왼쪽 걷기</span></div>
+    <div class="gr"><span class="gi">→</span><span>손 오른쪽 끝 → 오른쪽 걷기</span></div>
+    <div class="gr"><span class="gi">☝️</span><span>검지만 → 밥 먹기</span></div>
+    <div class="gr"><span class="gi">✌️</span><span>V자 → 응가</span></div>
+    <div class="gr"><span class="gi">✊</span><span>주먹 → 쓰다듬기</span></div>
+  </div>
+
+  <!-- ── 로딩 ── -->
+  <div id="loading">
+    <div class="ld-spin">🥝</div>
+    <div class="ld-title">키위새 불러오는 중...</div>
+    <div class="ld-sub">MediaPipe 로딩 중 &nbsp;·&nbsp; 카메라 권한을 허용해주세요</div>
+  </div>
+
+  <!-- ── MediaPipe ── -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <script>
+  (function () {
+    'use strict';
+
+    /* ────────────────────────────────────────
+       DOM
+    ──────────────────────────────────────── */
+    const kiwiWrap   = document.getElementById('kiwi-wrap');
+    const kiwiFlip   = document.getElementById('kiwi-flip');
+    const kiwiImg    = document.getElementById('kiwi-img');
+    const webcamEl   = document.getElementById('webcam');
+    const lmCanvas   = document.getElementById('lm-canvas');
+    const lmCtx      = lmCanvas.getContext('2d');
+    const pCanvas    = document.getElementById('particles-canvas');
+    const pCtx       = pCanvas.getContext('2d');
+    const hud        = document.getElementById('hud');
+    const loading    = document.getElementById('loading');
+
+    /* 파티클 캔버스 리사이즈 */
+    function resizeCanvases() {
+      pCanvas.width  = window.innerWidth;
+      pCanvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvases);
+    resizeCanvases();
+
+    /* 미니캠 고정 크기 */
+    lmCanvas.width  = 200;
+    lmCanvas.height = 150;
+
+    /* ────────────────────────────────────────
+       상태 정의
+    ──────────────────────────────────────── */
+    const STATES = {
+      idle:       { img: 'idle.png',       label: '😴 눈 깜빡...', cls: 's-idle',  spd: 0      },
+      walk_left:  { img: 'walk_left.png',  label: '← 왼쪽으로!',   cls: 's-walk',  spd: -0.16  },
+      walk_right: { img: 'walk_right.png', label: '→ 오른쪽으로!', cls: 's-walk',  spd: +0.16  },
+      eat:        { img: 'eat.png',        label: '🍎 냠냠냠~',     cls: 's-eat',   spd: 0      },
+      poop:       { img: 'poop.png',       label: '💩 응가 중...',  cls: 's-poop',  spd: 0      },
+      happy:      { img: 'happy.png',      label: '💕 쓰다듬기~',  cls: 's-happy', spd: 0      },
+    };
+    const ALL_CLS = [...new Set(Object.values(STATES).map(s => s.cls))];
+
+    let curState  = 'idle';
+    let kiwiXPct  = 50;          /* 화면 left % */
+    let _walkRAF  = null;
+    let _walkSpd  = 0;
+
+    /* ────────────────────────────────────────
+       setState
+    ──────────────────────────────────────── */
+    function setState(id, facingRight) {
+      const changed = id !== curState;
+      curState = id;
+
+      const s = STATES[id];
+      kiwiImg.src     = s.img;
+      hud.textContent = s.label;
+
+      /* 애니메이션 클래스 교체 */
+      kiwiWrap.classList.remove(...ALL_CLS);
+      kiwiWrap.classList.add(s.cls);
+
+      /* 방향 반전 */
+      if (facingRight !== undefined) {
+        kiwiFlip.style.transform = facingRight ? 'scaleX(1)' : 'scaleX(-1)';
+      }
+
+      /* 걷기 RAF */
+      if (s.spd !== 0) {
+        startWalk(s.spd);
+      } else {
+        stopWalk();
+      }
+
+      /* 상태 진입 이펙트 */
+      if (changed) {
+        if      (id === 'happy') burstParticles('heart', 12);
+        else if (id === 'eat')   burstParticles('food',  6);
+        else if (id === 'poop')  { burstParticles('poop', 8); triggerShake(); }
+      }
+    }
+
+    /* ────────────────────────────────────────
+       걷기 RAF
+    ──────────────────────────────────────── */
+    function startWalk(spd) {
+      /* 같은 방향이면 재시작 불필요 */
+      if (_walkRAF !== null && _walkSpd === spd) return;
+      stopWalk();
+      _walkSpd = spd;
+      (function step() {
+        kiwiXPct = Math.max(7, Math.min(93, kiwiXPct + _walkSpd));
+        kiwiWrap.style.left      = kiwiXPct + '%';
+        kiwiWrap.style.transform = 'translateX(-50%)';
+        _walkRAF = requestAnimationFrame(step);
+      })();
+    }
+
+    function stopWalk() {
+      if (_walkRAF !== null) { cancelAnimationFrame(_walkRAF); _walkRAF = null; }
+      _walkSpd = 0;
+    }
+
+    /* ────────────────────────────────────────
+       화면 흔들기
+    ──────────────────────────────────────── */
+    function triggerShake() {
+      document.body.classList.add('shaking');
+      document.body.addEventListener('animationend', () => {
+        document.body.classList.remove('shaking');
+      }, { once: true });
+    }
+
+    /* ────────────────────────────────────────
+       파티클 시스템
+    ──────────────────────────────────────── */
+    const particles = [];
+
+    function getKiwiCenter() {
+      return {
+        x: kiwiXPct / 100 * pCanvas.width,
+        y: pCanvas.height * (1 - 0.33) - 90,
+      };
+    }
+
+    function burstParticles(type, n) {
+      const { x, y } = getKiwiCenter();
+      for (let i = 0; i < n; i++) addParticle(type, x, y);
+    }
+
+    function addParticle(type, x, y) {
+      const p = { type, x, y, life: 1 };
+      if (type === 'heart') {
+        p.vx    = (Math.random() - .5) * 2.8;
+        p.vy    = -(2.2 + Math.random() * 3.8);
+        p.decay = .010 + Math.random() * .007;
+        p.size  = 13 + Math.random() * 13;
+        p.hue   = 338 + Math.random() * 28;
+      } else if (type === 'food') {
+        p.vx    = (Math.random() - .5) * 4.5;
+        p.vy    = -(1.8 + Math.random() * 2.8);
+        p.decay = .016 + Math.random() * .010;
+        p.size  = 5 + Math.random() * 7;
+        p.hue   = 75 + Math.random() * 90;
+      } else if (type === 'poop') {
+        p.vx    = (Math.random() - .5) * 2.2;
+        p.vy    = 1.8 + Math.random() * 4.2;
+        p.decay = .016 + Math.random() * .010;
+        p.size  = 7 + Math.random() * 9;
+        p.hue   = 24 + Math.random() * 14;
+        p.sat   = 44 + Math.random() * 16;
+        p.lig   = 30 + Math.random() * 16;
+      }
+      particles.push(p);
+    }
+
+    /* 하트 모양 경로 */
+    function heartPath(ctx, x, y, r) {
+      ctx.beginPath();
+      ctx.moveTo(x, y + r * .38);
+      ctx.bezierCurveTo(x, y - r * .08, x - r, y - r * .08, x - r, y - r * .46);
+      ctx.bezierCurveTo(x - r, y - r,   x,      y - r * .88,  x,    y - r * .50);
+      ctx.bezierCurveTo(x,     y - r * .88, x + r, y - r, x + r,   y - r * .46);
+      ctx.bezierCurveTo(x + r, y - r * .08, x,     y - r * .08, x,   y + r * .38);
+      ctx.closePath();
+    }
+
+    /* 파티클 루프 */
+    function particleTick() {
+      pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+
+      /* 상태 유지 중 연속 생성 */
+      if (curState === 'happy' && Math.random() < .18) {
+        const c = getKiwiCenter();
+        addParticle('heart', c.x + (Math.random() - .5) * 34, c.y - 10);
+      }
+      if (curState === 'eat' && Math.random() < .12) {
+        const c = getKiwiCenter();
+        addParticle('food', c.x + (Math.random() - .5) * 22, c.y + 28);
+      }
+      if (curState === 'poop' && Math.random() < .14) {
+        const c = getKiwiCenter();
+        addParticle('poop', c.x + (Math.random() - .5) * 14, c.y + 62);
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x   += p.vx;
+        p.y   += p.vy;
+        /* 중력: 하트는 가볍게, 나머지는 무겁게 */
+        p.vy  += p.type === 'heart' ? -0.04 : 0.14;
+        p.vx  *= 0.985;
+        p.life -= p.decay;
+        if (p.life <= 0) { particles.splice(i, 1); continue; }
+
+        pCtx.save();
+        pCtx.globalAlpha = Math.min(1, p.life * 1.6);
+        if (p.type === 'heart') {
+          pCtx.fillStyle = `hsl(${p.hue},90%,62%)`;
+          heartPath(pCtx, p.x, p.y, p.size / 2);
+          pCtx.fill();
+        } else {
+          const s = p.type === 'poop' ? p.sat : 70;
+          const l = p.type === 'poop' ? p.lig : 50;
+          pCtx.fillStyle = `hsl(${p.hue},${s}%,${l}%)`;
+          pCtx.beginPath();
+          pCtx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2);
+          pCtx.fill();
+        }
+        pCtx.restore();
+      }
+      requestAnimationFrame(particleTick);
+    }
+    particleTick();
+
+    /* ────────────────────────────────────────
+       제스처 인식
+    ──────────────────────────────────────── */
+    function fingerUp(lm, tip, pip) {
+      return lm[tip].y < lm[pip].y - 0.025;
+    }
+
+    function classifyGesture(lm) {
+      const idx   = fingerUp(lm, 8,  6);
+      const mid   = fingerUp(lm, 12, 10);
+      const ring  = fingerUp(lm, 16, 14);
+      const pinky = fingerUp(lm, 20, 18);
+
+      if (!idx && !mid && !ring && !pinky) return 'fist';
+      if (idx && !mid && !ring && !pinky)  return 'index';
+      if (idx &&  mid && !ring && !pinky)  return 'v';
+      return 'palm';
+    }
+
+    /* 시간적 스무딩 — N 프레임 중 최빈값 */
+    let gBuf = [];
+    const G_N = 5;
+    function smoothGesture(g) {
+      gBuf.push(g);
+      if (gBuf.length > G_N) gBuf.shift();
+      const cnt = {};
+      gBuf.forEach(x => cnt[x] = (cnt[x] || 0) + 1);
+      return Object.entries(cnt).sort((a, b) => b[1] - a[1])[0][0];
+    }
+
+    /* ────────────────────────────────────────
+       MediaPipe 결과 처리
+    ──────────────────────────────────────── */
+    function onResults(results) {
+      /* 미니캠: 미러 + 랜드마크 오버레이 */
+      lmCtx.save();
+      lmCtx.scale(-1, 1);
+      lmCtx.translate(-lmCanvas.width, 0);
+      lmCtx.drawImage(results.image, 0, 0, lmCanvas.width, lmCanvas.height);
+
+      if (results.multiHandLandmarks?.length) {
+        const lm = results.multiHandLandmarks[0];
+        /* drawing_utils 는 normalized 좌표를 canvas 크기에 맞춰 자동 스케일 */
+        drawConnectors(lmCtx, lm, HAND_CONNECTIONS,
+          { color: 'rgba(255,255,255,.55)', lineWidth: 1 });
+        drawLandmarks(lmCtx, lm,
+          { color: '#22c55e', lineWidth: 1, radius: 2 });
+      }
+      lmCtx.restore();
+
+      /* 손 없음 */
+      if (!results.multiHandLandmarks?.length) {
+        gBuf = [];
+        stopWalk();
+        setState('idle', undefined);
+        return;
+      }
+
+      const lm      = results.multiHandLandmarks[0];
+      const gesture = smoothGesture(classifyGesture(lm));
+
+      /* 손바닥 X — 미러 보정 (0=화면 왼쪽, 1=화면 오른쪽) */
+      const palmX    = 1 - lm[9].x;
+      const palmXPct = palmX * 100;
+
+      switch (gesture) {
+        case 'palm':
+          if (palmXPct < 20) {
+            setState('walk_left', false);
+          } else if (palmXPct > 80) {
+            setState('walk_right', true);
+          } else {
+            const faceRight = palmXPct >= 50;
+            stopWalk();
+            /* idle 클래스 & 방향만 갱신 */
+            curState = 'idle';
+            kiwiImg.src = STATES.idle.img;
+            kiwiWrap.classList.remove(...ALL_CLS);
+            kiwiWrap.classList.add('s-idle');
+            kiwiFlip.style.transform = faceRight ? 'scaleX(1)' : 'scaleX(-1)';
+            hud.textContent = `👀 ${faceRight ? '오른쪽' : '왼쪽'} 바라봄`;
+          }
+          break;
+        case 'fist':  setState('happy', undefined); break;
+        case 'index': setState('eat',   undefined); break;
+        case 'v':     setState('poop',  undefined); break;
+        default:      setState('idle',  undefined);
+      }
+    }
+
+    /* ────────────────────────────────────────
+       MediaPipe 초기화
+    ──────────────────────────────────────── */
+    function showError(html) {
+      loading.innerHTML = `
+        <div style="font-size:48px">⚠️</div>
+        <div style="font-size:18px;color:#f87171;font-weight:700;text-align:center">${html}</div>
+        <div style="font-size:13px;opacity:.5;margin-top:4px">새로고침 후 다시 시도해주세요</div>`;
+    }
+
+    if (typeof Hands === 'undefined' || typeof Camera === 'undefined') {
+      showError('MediaPipe 로드 실패<br>네트워크 연결을 확인해주세요');
+      return;
+    }
+
+    let hands, camera;
+    try {
+      hands = new Hands({
+        locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`,
+      });
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.5,
+      });
+      hands.onResults(onResults);
+
+      camera = new Camera(webcamEl, {
+        onFrame: async () => { await hands.send({ image: webcamEl }); },
+        width: 640, height: 480,
+      });
+    } catch (e) {
+      showError('초기화 오류: ' + e.message);
+      return;
+    }
+
+    camera.start()
+      .then(() => {
+        loading.classList.add('hidden');
+        kiwiWrap.style.left      = kiwiXPct + '%';
+        kiwiWrap.style.transform = 'translateX(-50%)';
+        setState('idle');
+      })
+      .catch(err => {
+        showError(
+          err.name === 'NotAllowedError'
+            ? '카메라 권한을 허용해주세요'
+            : '카메라 오류: ' + err.message
+        );
+      });
+
+  })();
+  </script>
+</body>
+</html>
